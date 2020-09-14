@@ -159,7 +159,11 @@ func (m *Miner) mine(ctx context.Context) {
 			prebase, err := m.GetBestMiningCandidate(ctx)
 			if err != nil {
 				log.Errorf("failed to get best mining candidate: %s", err)
-				m.niceSleep(time.Second * 5)
+				ret := m.niceSleep(time.Second * 5)
+				if ! ret {
+					log.Errorf("-- break --")
+					break
+				}
 				continue
 			}
 
