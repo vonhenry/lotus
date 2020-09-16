@@ -415,7 +415,7 @@ func (c *client) getShuffledPeers() []peer.ID {
 }
 
 func shufflePrefix(peers []peer.ID) {
-	prefix := ShufflePeersPrefix
+	prefix := 50 //ShufflePeersPrefix
 	if len(peers) < prefix {
 		prefix = len(peers)
 	}
