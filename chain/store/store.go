@@ -440,6 +440,7 @@ func (cs *ChainStore) SetGenesis(b *types.BlockHeader) error {
 }
 
 func (cs *ChainStore) PutTipSet(ctx context.Context, ts *types.TipSet) error {
+	cs.pushBaseFee(BaseFeeRecord{ts.Blocks()[0].ParentBaseFee.Int64(),ts.Blocks()[0].Height})
 	for _, b := range ts.Blocks() {
 		if err := cs.PersistBlockHeaders(b); err != nil {
 			return err
@@ -942,7 +943,6 @@ func (cs *ChainStore) expandTipset(b *types.BlockHeader) (*types.TipSet, error) 
 }
 
 func (cs *ChainStore) AddBlock(ctx context.Context, b *types.BlockHeader) error {
-	cs.pushBaseFee(BaseFeeRecord{b.ParentBaseFee.Int64(),b.Height})
 	if err := cs.PersistBlockHeaders(b); err != nil {
 		return err
 	}
