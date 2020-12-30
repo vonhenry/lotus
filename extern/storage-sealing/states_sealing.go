@@ -275,6 +275,11 @@ func (m *Sealing) handlePreCommitting(ctx statemachine.Context, sector SectorInf
 	}
 
 	log.Infof("submitting precommit for sector %d (deposit: %s): ", sector.SectorNumber, deposit)
+	a,e := m.api.ChainBaseFeeIsLow(ctx.Context())
+	if e != nil {
+		_ = a
+	}
+
 	mcid, err := m.api.SendMsg(ctx.Context(), from, m.maddr, miner.Methods.PreCommitSector, deposit, m.feeCfg.MaxPreCommitGasFee, enc.Bytes())
 	if err != nil {
 		if params.ReplaceCapacity {

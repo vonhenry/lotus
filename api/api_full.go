@@ -47,6 +47,9 @@ type FullNode interface {
 	// ChainHead returns the current head of the chain.
 	ChainHead(context.Context) (*types.TipSet, error)
 
+	//ChainBaseFeeIsLow returns if the current basefee is fit to send msg
+	ChainBaseFeeIsLow(context.Context)(bool, error)
+
 	// ChainGetRandomnessFromTickets is used to sample the chain for randomness.
 	ChainGetRandomnessFromTickets(ctx context.Context, tsk types.TipSetKey, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error)
 

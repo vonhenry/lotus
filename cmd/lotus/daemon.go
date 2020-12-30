@@ -146,6 +146,7 @@ var DaemonCmd = &cli.Command{
 		},
 	},
 	Action: func(cctx *cli.Context) error {
+
 		isLite := cctx.Bool("lite")
 
 		err := runmetrics.Enable(runmetrics.RunMetricOptions{

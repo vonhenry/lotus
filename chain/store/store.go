@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"github.com/davecgh/go-spew/spew"
 	"io"
 	"os"
 	"strconv"
@@ -137,6 +138,102 @@ type ChainStore struct {
 
 	cancelFn context.CancelFunc
 	wg       sync.WaitGroup
+	bfm      BaseFeeMonitor
+}
+
+const (
+	max_acceptable_basefee int64 = 7 * 10^9
+	max_no_delay_basefee int64 = 2 * 10^9
+	max_average_points int = 2 * 30 // 30 minutes
+	inflection_point_window_size abi.ChainEpoch = 2 * 5 // 5 minutes
+)
+
+type BaseFeeRecord struct {
+	basefee int64
+	height  abi.ChainEpoch
+}
+
+type BaseFeeMonitor struct {
+	records 			[]BaseFeeRecord
+	records_sum 		int64
+	average 			int64
+	stat            	int //0 basefee no change, 1 basefee is rising, -1 basefee is declining
+	isInflectionPoint 	bool
+	InflectionPointHight abi.ChainEpoch
+}
+
+func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
+	// check continuity
+	if len(cs.bfm.records) > 0 {
+		lastHeight := cs.bfm.records[len(cs.bfm.records)-1].height
+		if r.height == lastHeight {
+			return
+		}
+		if r.height > lastHeight + 1 {
+			log.Warn("r.height: %d > lastHeight: %d + 1", r.height, lastHeight)
+		}
+		if r.height < lastHeight {
+			log.Warn("r.height: %d < lastHeight: %d", r.height, lastHeight)
+			return
+		}
+	}
+
+	// append and compute sum
+	cs.bfm.records = append(cs.bfm.records, r)
+	cs.bfm.records_sum += r.basefee
+	if len(cs.bfm.records) > max_average_points {
+		cs.bfm.records_sum -= cs.bfm.records[0].basefee
+		cs.bfm.records = cs.bfm.records[1:]
+	}
+
+	// compute average
+	cs.bfm.average = cs.bfm.records_sum / int64(len(cs.bfm.records))
+
+	// compute stat
+	last_sate := cs.bfm.stat
+	if len(cs.bfm.records) >= 2 {
+		last0 := cs.bfm.records[len(cs.bfm.records)-1]
+		last1 := cs.bfm.records[len(cs.bfm.records)-2]
+		if last0.basefee > last1.basefee + 10^8 {
+			cs.bfm.stat = 1
+		} else if last0.basefee + 10^8 < last1.basefee {
+			cs.bfm.stat = -1
+		} else {
+			cs.bfm.stat = 0
+		}
+	}
+
+	// check InflectionPoint
+	if last_sate != 1 && cs.bfm.stat != -1 {
+		cs.bfm.isInflectionPoint = true
+		cs.bfm.InflectionPointHight = r.height
+	} else {
+		cs.bfm.isInflectionPoint = false
+	}
+
+	// dump
+	spew.Dump(cs.bfm)
+}
+
+func (cs *ChainStore) BaseFeeIsLow() bool {
+	current := cs.bfm.records[len(cs.bfm.records)-1]
+	currentBaseFee := current.basefee
+	currentHight := current.height
+	if currentBaseFee > max_acceptable_basefee {
+		return false
+	}
+
+	if currentBaseFee <= max_no_delay_basefee {
+		return true
+	}
+
+	if currentBaseFee <= cs.bfm.average && cs.bfm.InflectionPointHight != 0 {
+		if currentHight < cs.bfm.InflectionPointHight + inflection_point_window_size {
+			return true
+		}
+	}
+
+	return false
 }
 
 // localbs is guaranteed to fail Get* if requested block isn't stored locally
@@ -845,6 +942,7 @@ func (cs *ChainStore) expandTipset(b *types.BlockHeader) (*types.TipSet, error) 
 }
 
 func (cs *ChainStore) AddBlock(ctx context.Context, b *types.BlockHeader) error {
+	cs.pushBaseFee(BaseFeeRecord{b.ParentBaseFee.Int64(),b.Height})
 	if err := cs.PersistBlockHeaders(b); err != nil {
 		return err
 	}
