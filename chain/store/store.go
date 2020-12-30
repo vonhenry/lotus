@@ -142,8 +142,10 @@ type ChainStore struct {
 }
 
 const (
-	max_acceptable_basefee int64 = 7 * 10^9
-	max_no_delay_basefee int64 = 2 * 10^9
+	m10n9 = 1000000000
+	m10n8 = 100000000
+	max_acceptable_basefee int64 = 7 * m10n9
+	max_no_delay_basefee int64 = 2 * m10n9
 	max_average_points int = 2 * 30 // 30 minutes
 	inflection_point_window_size abi.ChainEpoch = 2 * 5 // 5 minutes
 )
@@ -194,9 +196,9 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 	if len(cs.bfm.records) >= 2 {
 		last0 := cs.bfm.records[len(cs.bfm.records)-1]
 		last1 := cs.bfm.records[len(cs.bfm.records)-2]
-		if last0.basefee > last1.basefee + 10^8 {
+		if last0.basefee > last1.basefee + m10n8 {
 			cs.bfm.stat = 1
-		} else if last0.basefee + 10^8 < last1.basefee {
+		} else if last0.basefee + m10n8 < last1.basefee {
 			cs.bfm.stat = -1
 		} else {
 			cs.bfm.stat = 0
@@ -213,7 +215,7 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 		cs.bfm.isLow = false
 	} else  if r.basefee <= max_no_delay_basefee {
 		cs.bfm.isLow = true
-	} else if r.basefee <= cs.bfm.average && cs.bfm.InflectionPointHight != 0 {
+	} else if cs.bfm.stat != -1 && r.basefee <= cs.bfm.average && cs.bfm.InflectionPointHight != 0 {
 		if r.height < cs.bfm.InflectionPointHight + inflection_point_window_size {
 			cs.bfm.isLow = true
 		}

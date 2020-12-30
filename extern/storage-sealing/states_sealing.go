@@ -3,6 +3,7 @@ package sealing
 import (
 	"bytes"
 	"context"
+	"time"
 
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -275,9 +276,13 @@ func (m *Sealing) handlePreCommitting(ctx statemachine.Context, sector SectorInf
 	}
 
 	log.Infof("submitting precommit for sector %d (deposit: %s): ", sector.SectorNumber, deposit)
-	a,e := m.api.ChainBaseFeeIsLow(ctx.Context())
-	if e != nil {
-		_ = a
+
+	start := time.Now().Minute()
+	for {
+		if time.Now().Minute() - start > 30 {  break }
+		isLow, _ := m.api.ChainBaseFeeIsLow(ctx.Context())
+		if isLow  {  break }
+		time.Sleep(5)
 	}
 
 	mcid, err := m.api.SendMsg(ctx.Context(), from, m.maddr, miner.Methods.PreCommitSector, deposit, m.feeCfg.MaxPreCommitGasFee, enc.Bytes())
@@ -467,6 +472,14 @@ func (m *Sealing) handleSubmitCommit(ctx statemachine.Context, sector SectorInfo
 	from, _, err := m.addrSel(ctx.Context(), mi, api.CommitAddr, goodFunds, collateral)
 	if err != nil {
 		return ctx.Send(SectorCommitFailed{xerrors.Errorf("no good address to send commit message from: %w", err)})
+	}
+
+	start := time.Now().Minute()
+	for {
+		if time.Now().Minute() - start > 30 {  break }
+		isLow, _ := m.api.ChainBaseFeeIsLow(ctx.Context())
+		if isLow  {  break }
+		time.Sleep(5)
 	}
 
 	// TODO: check seed / ticket / deals are up to date
