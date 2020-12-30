@@ -158,8 +158,8 @@ type BaseFeeMonitor struct {
 	records_sum 		int64
 	average 			int64
 	stat            	int //0 basefee no change, 1 basefee is rising, -1 basefee is declining
-	isInflectionPoint 	bool
 	InflectionPointHight abi.ChainEpoch
+	isLow               bool
 }
 
 func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
@@ -205,10 +205,20 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 
 	// check InflectionPoint
 	if last_sate != 1 && cs.bfm.stat != -1 {
-		cs.bfm.isInflectionPoint = true
 		cs.bfm.InflectionPointHight = r.height
+	}
+
+	// check isLow
+	if r.basefee > max_acceptable_basefee {
+		cs.bfm.isLow = false
+	} else  if r.basefee <= max_no_delay_basefee {
+		cs.bfm.isLow = true
+	} else if r.basefee <= cs.bfm.average && cs.bfm.InflectionPointHight != 0 {
+		if r.height < cs.bfm.InflectionPointHight + inflection_point_window_size {
+			cs.bfm.isLow = true
+		}
 	} else {
-		cs.bfm.isInflectionPoint = false
+		cs.bfm.isLow = false
 	}
 
 	// dump
@@ -216,24 +226,7 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 }
 
 func (cs *ChainStore) BaseFeeIsLow() bool {
-	current := cs.bfm.records[len(cs.bfm.records)-1]
-	currentBaseFee := current.basefee
-	currentHight := current.height
-	if currentBaseFee > max_acceptable_basefee {
-		return false
-	}
-
-	if currentBaseFee <= max_no_delay_basefee {
-		return true
-	}
-
-	if currentBaseFee <= cs.bfm.average && cs.bfm.InflectionPointHight != 0 {
-		if currentHight < cs.bfm.InflectionPointHight + inflection_point_window_size {
-			return true
-		}
-	}
-
-	return false
+	return cs.bfm.isLow
 }
 
 // localbs is guaranteed to fail Get* if requested block isn't stored locally
