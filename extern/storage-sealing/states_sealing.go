@@ -282,6 +282,7 @@ func (m *Sealing) handlePreCommitting(ctx statemachine.Context, sector SectorInf
 		if time.Now().Minute() - start > 30 {  break }
 		isLow, _ := m.api.ChainBaseFeeIsLow(ctx.Context())
 		if isLow  {  break }
+		log.Debug("waiting lower basefee: sector %d, waited %d minutes", sector.SectorNumber, time.Now().Minute() - start)
 		time.Sleep(5)
 	}
 
@@ -479,6 +480,7 @@ func (m *Sealing) handleSubmitCommit(ctx statemachine.Context, sector SectorInfo
 		if time.Now().Minute() - start > 30 {  break }
 		isLow, _ := m.api.ChainBaseFeeIsLow(ctx.Context())
 		if isLow  {  break }
+		log.Debug("waiting lower basefee: sector %d, waited %d minutes", sector.SectorNumber, time.Now().Minute() - start)
 		time.Sleep(5)
 	}
 
