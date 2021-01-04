@@ -215,7 +215,7 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 		cs.bfm.isLow = false
 	} else  if r.basefee <= max_no_delay_basefee {
 		cs.bfm.isLow = true
-	} else if cs.bfm.stat != -1 && r.basefee <= cs.bfm.average && cs.bfm.InflectionPointHight != 0 {
+	} else if cs.bfm.stat != -1 && r.basefee <= cs.bfm.average * (100 - 10) / 100  && cs.bfm.InflectionPointHight != 0 {
 		if r.height < cs.bfm.InflectionPointHight + inflection_point_window_size {
 			cs.bfm.isLow = true
 		}
