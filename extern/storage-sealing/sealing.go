@@ -62,7 +62,7 @@ type SealingAPI interface {
 	StateNetworkVersion(ctx context.Context, tok TipSetToken) (network.Version, error)
 	SendMsg(ctx context.Context, from, to address.Address, method abi.MethodNum, value, maxFee abi.TokenAmount, params []byte) (cid.Cid, error)
 	ChainHead(ctx context.Context) (TipSetToken, abi.ChainEpoch, error)
-	ChainBaseFeeIsLow(ctx context.Context) (bool, error)
+	ChainBaseFeeInfo(ctx context.Context) (api.BaseFeeInfo, error)
 	ChainGetRandomnessFromBeacon(ctx context.Context, tok TipSetToken, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error)
 	ChainGetRandomnessFromTickets(ctx context.Context, tok TipSetToken, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error)
 	ChainReadObj(context.Context, cid.Cid) ([]byte, error)

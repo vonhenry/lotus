@@ -227,8 +227,11 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 	spew.Dump(cs.bfm)
 }
 
-func (cs *ChainStore) BaseFeeIsLow() bool {
-	return cs.bfm.isLow
+func (cs *ChainStore) GetBaseFeeInfo() api.BaseFeeInfo {
+	if len(cs.bfm.records) > 0 {
+		return api.BaseFeeInfo{ cs.bfm.records[len(cs.bfm.records)-1].basefee, cs.bfm.isLow}
+	}
+	return api.BaseFeeInfo{}
 }
 
 // localbs is guaranteed to fail Get* if requested block isn't stored locally

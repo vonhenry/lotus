@@ -78,8 +78,8 @@ func (m *ChainModule) ChainHead(context.Context) (*types.TipSet, error) {
 	return m.Chain.GetHeaviestTipSet(), nil
 }
 
-func (m *ChainAPI) ChainBaseFeeIsLow(context.Context) (bool, error) {
-	return m.Chain.BaseFeeIsLow(), nil
+func (m *ChainAPI) ChainBaseFeeInfo(context.Context) (api.BaseFeeInfo, error) {
+	return m.Chain.GetBaseFeeInfo(), nil
 }
 
 func (a *ChainAPI) ChainGetRandomnessFromTickets(ctx context.Context, tsk types.TipSetKey, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error) {
