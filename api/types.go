@@ -102,5 +102,6 @@ type NetBlockList struct {
 
 type BaseFeeInfo struct {
 	CurrentBaseFee int64
+	AverageBaseFee int64
 	IsLow bool
 }

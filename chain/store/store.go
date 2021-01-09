@@ -229,7 +229,7 @@ func (cs *ChainStore) pushBaseFee(r BaseFeeRecord){
 
 func (cs *ChainStore) GetBaseFeeInfo() api.BaseFeeInfo {
 	if len(cs.bfm.records) > 0 {
-		return api.BaseFeeInfo{ cs.bfm.records[len(cs.bfm.records)-1].basefee, cs.bfm.isLow}
+		return api.BaseFeeInfo{ cs.bfm.records[len(cs.bfm.records)-1].basefee, cs.bfm.average, cs.bfm.isLow}
 	}
 	return api.BaseFeeInfo{}
 }

@@ -282,10 +282,12 @@ func (m *Sealing) handlePreCommitting(ctx statemachine.Context, sector SectorInf
 	start := time.Now().Unix()
 	initialBaseFee := bi.CurrentBaseFee
 	finalBaseFee := initialBaseFee
+	averageBaseFee := bi.AverageBaseFee
 	for {
 		if time.Now().Unix() - start > 30 * 60 {  break }
 		bi, _ := m.api.ChainBaseFeeInfo(ctx.Context())
 		finalBaseFee = bi.CurrentBaseFee
+		averageBaseFee = bi.AverageBaseFee
 		if bi.IsLow {  break }
 		time.Sleep(5)
 	}
@@ -293,7 +295,7 @@ func (m *Sealing) handlePreCommitting(ctx statemachine.Context, sector SectorInf
 	if initialBaseFee > finalBaseFee {
 		save = (initialBaseFee - finalBaseFee) * 100 / initialBaseFee
 	}
-	fmt.Printf("chose lower basefee: sector %d precommit, waited %d seconds, init&final fee: %d %d, saved %d%% \n", sector.SectorNumber, time.Now().Unix() - start, initialBaseFee, finalBaseFee, save)
+	fmt.Printf("chose lower basefee: sector %d provecommit, waited %d seconds, init&final&average fees: %d %d %d, saved %d%% \n", sector.SectorNumber, time.Now().Unix() - start, initialBaseFee, finalBaseFee, averageBaseFee, save)
 
 	mcid, err := m.api.SendMsg(ctx.Context(), from, m.maddr, miner.Methods.PreCommitSector, deposit, m.feeCfg.MaxPreCommitGasFee, enc.Bytes())
 	if err != nil {
@@ -488,10 +490,12 @@ func (m *Sealing) handleSubmitCommit(ctx statemachine.Context, sector SectorInfo
 	start := time.Now().Unix()
 	initialBaseFee := bi.CurrentBaseFee
 	finalBaseFee := initialBaseFee
+	averageBaseFee := bi.AverageBaseFee
 	for {
 		if time.Now().Unix() - start > 30 * 60 {  break }
 		bi, _ := m.api.ChainBaseFeeInfo(ctx.Context())
 		finalBaseFee = bi.CurrentBaseFee
+		averageBaseFee = bi.AverageBaseFee
 		if bi.IsLow {  break }
 		time.Sleep(5)
 	}
@@ -499,7 +503,7 @@ func (m *Sealing) handleSubmitCommit(ctx statemachine.Context, sector SectorInfo
 	if initialBaseFee > finalBaseFee {
 		save = (initialBaseFee - finalBaseFee) * 100 / initialBaseFee
 	}
-	fmt.Printf("chose lower basefee: sector %d provecommit, waited %d seconds, init&final fee: %d %d, saved %d%% \n", sector.SectorNumber, time.Now().Unix() - start, initialBaseFee, finalBaseFee, save)
+	fmt.Printf("chose lower basefee: sector %d provecommit, waited %d seconds, init&final&average fees: %d %d %d, saved %d%% \n", sector.SectorNumber, time.Now().Unix() - start, initialBaseFee, finalBaseFee, averageBaseFee, save)
 
 	// TODO: check seed / ticket / deals are up to date
 	mcid, err := m.api.SendMsg(ctx.Context(), from, m.maddr, miner.Methods.ProveCommitSector, collateral, m.feeCfg.MaxCommitGasFee, enc.Bytes())
