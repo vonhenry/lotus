@@ -83,6 +83,7 @@ type FullNodeStruct struct {
 	Internal struct {
 		ChainNotify                   func(context.Context) (<-chan []*api.HeadChange, error)                                                            `perm:"read"`
 		ChainHead                     func(context.Context) (*types.TipSet, error)                                                                       `perm:"read"`
+		ChainBaseFeeInfo              func(context.Context) (api.BaseFeeInfo, error)                                                                     `perm:"read"`
 		ChainGetRandomnessFromTickets func(context.Context, types.TipSetKey, crypto.DomainSeparationTag, abi.ChainEpoch, []byte) (abi.Randomness, error) `perm:"read"`
 		ChainGetRandomnessFromBeacon  func(context.Context, types.TipSetKey, crypto.DomainSeparationTag, abi.ChainEpoch, []byte) (abi.Randomness, error) `perm:"read"`
 		ChainGetBlock                 func(context.Context, cid.Cid) (*types.BlockHeader, error)                                                         `perm:"read"`
@@ -733,6 +734,10 @@ func (c *FullNodeStruct) MinerCreateBlock(ctx context.Context, bt *api.BlockTemp
 
 func (c *FullNodeStruct) ChainHead(ctx context.Context) (*types.TipSet, error) {
 	return c.Internal.ChainHead(ctx)
+}
+
+func (c *FullNodeStruct) ChainBaseFeeInfo(ctx context.Context) (api.BaseFeeInfo, error) {
+ 	return c.Internal.ChainBaseFeeInfo(ctx)
 }
 
 func (c *FullNodeStruct) ChainGetRandomnessFromTickets(ctx context.Context, tsk types.TipSetKey, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error) {
