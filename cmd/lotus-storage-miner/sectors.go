@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"sort"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"github.com/filecoin-project/lotus/lib/tablewriter"
 
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/filecoin-project/lotus/extern/sector-storage/storiface"
 	sealing "github.com/filecoin-project/lotus/extern/storage-sealing"
 )
 
@@ -35,6 +37,8 @@ var sectorsCmd = &cli.Command{
 		sectorsRefsCmd,
 		sectorsUpdateCmd,
 		sectorsPledgeCmd,
+		sectorsMyPledgeCmd,
+		sectorsMyPledgeOnceCmd,
 		sectorsTerminateCmd,
 		sectorsRemoveCmd,
 		sectorsMarkForUpgradeCmd,
@@ -56,6 +60,94 @@ var sectorsPledgeCmd = &cli.Command{
 		ctx := lcli.ReqContext(cctx)
 
 		return nodeApi.PledgeSector(ctx)
+	},
+}
+
+var sectorsMyPledgeOnceCmd = &cli.Command{
+	Name:  "mypledgeonce",
+	Usage: "store random data in a sector for once AddPieceMax",
+	Action: func(cctx *cli.Context) error {
+		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := lcli.ReqContext(cctx)
+
+		stats, err := nodeApi.WorkerStats(ctx)
+		if err != nil {
+			return err
+		}
+
+		type sortableStat struct {
+			id uuid.UUID
+			storiface.WorkerStats
+		}
+		st := make([]sortableStat, 0, len(stats))
+		for id, stat := range stats {
+			st = append(st, sortableStat{id, stat})
+		}
+		sort.Slice(st, func(i, j int) bool {
+			return st[i].id.String() < st[j].id.String()
+		})
+		var uAddPieceMax = uint64(0)
+		for _, stat := range st {
+			if stat.Info.Resources.AddPieceMax > 0 {
+				uAddPieceMax = uAddPieceMax + 1
+			}
+		}
+		for i:=uint64(0);i < uAddPieceMax;i++ {
+			err = nodeApi.PledgeSector(ctx)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("lotus-miner sectors pledge %d ... \n", i+1)
+			time.Sleep(1 * time.Second)
+		}
+		return nil
+	},
+}
+
+var sectorsMyPledgeCmd = &cli.Command{
+	Name:  "mypledge",
+	Usage: "store random data in a sector for all AddPieceMax",
+	Action: func(cctx *cli.Context) error {
+		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := lcli.ReqContext(cctx)
+
+		stats, err := nodeApi.WorkerStats(ctx)
+		if err != nil {
+			return err
+		}
+
+		type sortableStat struct {
+			id uuid.UUID
+			storiface.WorkerStats
+		}
+		st := make([]sortableStat, 0, len(stats))
+		for id, stat := range stats {
+			st = append(st, sortableStat{id, stat})
+		}
+		sort.Slice(st, func(i, j int) bool {
+			return st[i].id.String() < st[j].id.String()
+		})
+		var uAddPieceMax = uint64(0)
+		for _, stat := range st {
+			uAddPieceMax = uAddPieceMax + stat.Info.Resources.AddPieceMax
+		}
+		for i:=uint64(0);i < uAddPieceMax;i++ {
+			err = nodeApi.PledgeSector(ctx)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("lotus-miner sectors pledge %d ... \n", i+1)
+			time.Sleep(1 * time.Second)
+		}
+		return nil
 	},
 }
 

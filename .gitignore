@@ -41,3 +41,11 @@ bin/ipget
 bin/tmp/*
 .idea
 scratchpad
+
+CopyrightNotice.txt
+extern/sector-counter/
+lotus-miner_standard
+lotus-worker_standard
+lotus_standard
+myScheduler2_1.4.1_20210131_MMiner_AP.zip	
+myscheduler.json
