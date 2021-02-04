@@ -99,3 +99,10 @@ type NetBlockList struct {
 	IPAddrs   []string
 	IPSubnets []string
 }
+
+type BaseFeeInfo struct {
+	CurrentBaseFee int64
+	AverageBaseFee int64
+	IsLow bool
+}
+

@@ -47,6 +47,9 @@ type FullNode interface {
 	// ChainHead returns the current head of the chain.
 	ChainHead(context.Context) (*types.TipSet, error)
 
+	//ChainBaseFeeInfo returns if the current basefee is fit to send msg
+	ChainBaseFeeInfo(context.Context)(BaseFeeInfo, error)
+
 	// ChainGetRandomnessFromTickets is used to sample the chain for randomness.
 	ChainGetRandomnessFromTickets(ctx context.Context, tsk types.TipSetKey, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error)
 
@@ -163,7 +166,7 @@ type FullNode interface {
 	// SyncIncomingBlocks returns a channel streaming incoming, potentially not
 	// yet synced block headers.
 	SyncIncomingBlocks(ctx context.Context) (<-chan *types.BlockHeader, error)
-
+	ChainHead
 	// SyncCheckpoint marks a blocks as checkpointed, meaning that it won't ever fork away from it.
 	SyncCheckpoint(ctx context.Context, tsk types.TipSetKey) error
 

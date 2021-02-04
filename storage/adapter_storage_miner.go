@@ -328,6 +328,10 @@ func (s SealingAPIAdapter) ChainHead(ctx context.Context) (sealing.TipSetToken, 
 	return head.Key().Bytes(), head.Height(), nil
 }
 
+func (s SealingAPIAdapter) ChainBaseFeeInfo(ctx context.Context) (api.BaseFeeInfo, error) {
+	return s.delegate.ChainBaseFeeInfo(ctx)
+}
+
 func (s SealingAPIAdapter) ChainGetMessage(ctx context.Context, mc cid.Cid) (*types.Message, error) {
 	return s.delegate.ChainGetMessage(ctx, mc)
 }
