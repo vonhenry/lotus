@@ -156,6 +156,31 @@ var runCmd = &cli.Command{
 			Usage: "used when 'listen' is unspecified. must be a valid duration recognized by golang's time.ParseDuration function",
 			Value: "30m",
 		},
+   		&cli.Uint64Flag{
+			Name:  "precommit1max",
+			Usage: "set maximum precommit1 quantity",
+			Value: 7,
+		},
+		&cli.Uint64Flag{
+			Name:  "diskholdmax",
+			Usage: "set maximum disk hold quantity",
+			Value: 0,
+		},
+		&cli.Uint64Flag{
+			Name:  "precommit2max",
+			Usage: "set maximum precommit2 quantity",
+			Value: 1,
+		},
+		&cli.Uint64Flag{
+			Name:  "commit2max",
+			Usage: "set maximum commit2 quantity",
+			Value: 1,
+		},
+		&cli.BoolFlag{
+			Name:  "forcep2fromlocalp1",
+			Usage: "enable force precommit2 for local precommit1",
+			Value: false,
+		},
 	},
 	Before: func(cctx *cli.Context) error {
 		if cctx.IsSet("address") {
@@ -256,6 +281,15 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("no task types specified")
 		}
 
+		hostname, err := os.Hostname()
+		if err != nil {
+			hostname = ""
+		}
+		var preCommit1Max = cctx.Uint64("precommit1max")
+		var preCommit2Max = cctx.Uint64("precommit2max")
+		var commit2Max = cctx.Uint64("commit2max")
+		var diskHoldMax = cctx.Uint64("diskholdmax")
+		var forceP2FromLocalP1 = cctx.Bool("forcep2fromlocalp1")
 		// Open repo
 
 		repoPath := cctx.String(FlagWorkerRepo)
@@ -322,6 +356,37 @@ var runCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
+
+		fileDst := filepath.Join(lr.Path(), "myscheduler.json")
+		_, errorFile := os.Stat(fileDst)
+		if os.IsNotExist(errorFile) {
+			//persisting myScheduler metadata start//
+			b, err := json.MarshalIndent(&stores.MySchedulerMeta{
+				WorkerName:         hostname,
+				AddPieceMax:        uint64(0),
+				PreCommit1Max:      uint64(0),
+				PreCommit2Max:      uint64(0),
+				Commit2Max:         uint64(0),
+				DiskHoldMax:        uint64(0),
+				APDiskHoldMax:      uint64(0),
+				ForceP1FromLocalAP: true,
+				ForceP2FromLocalP1: true,
+				ForceC2FromLocalP2: false,
+				IsPlanOffline:      false,
+				AllowP2C2Parallel:  false,
+				AutoPledgeDiff:     uint64(0),
+			}, "", "  ")
+			if err != nil {
+				//return xerrors.Errorf("marshaling myScheduler config: %w", err)
+				log.Error("marshaling myScheduler config:", err)
+			}
+			if err := ioutil.WriteFile(filepath.Join(lr.Path(), "myscheduler.json"), b, 0644); err != nil {
+				//return xerrors.Errorf("persisting myScheduler metadata (%s): %w", filepath.Join(lr.Path(), "myscheduler.json"), err)
+				log.Error("persisting myScheduler metadata:", err)
+			}
+			//persisting myScheduler metadata end//
+		}
+
 		defer func() {
 			if err := lr.Close(); err != nil {
 				log.Error("closing repo", err)
@@ -382,6 +447,11 @@ var runCmd = &cli.Command{
 			LocalWorker: sectorstorage.NewLocalWorker(sectorstorage.WorkerConfig{
 				TaskTypes: taskTypes,
 				NoSwap:    cctx.Bool("no-swap"),
+				PreCommit1Max:      preCommit1Max,
+				PreCommit2Max:      preCommit2Max,
+				Commit2Max:         commit2Max,
+				DiskHoldMax:        diskHoldMax,
+				ForceP2FromLocalP1: forceP2FromLocalP1,
 			}, remote, localStore, nodeApi, nodeApi, wsts),
 			localStore: localStore,
 			ls:         lr,

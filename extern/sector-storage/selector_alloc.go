@@ -64,8 +64,12 @@ func (s *allocSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt abi
 	return false, nil
 }
 
-func (s *allocSelector) Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle) (bool, error) {
-	return a.utilization() < b.utilization(), nil
+func (s *allocSelector) Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle, allowMyScheduler bool) (bool, error) {
+	if allowMyScheduler{
+		return a.utilizationMine(task, a, b), nil
+	} else {
+		return a.utilization() < b.utilization(), nil
+	}
 }
 
 var _ WorkerSelector = &allocSelector{}
