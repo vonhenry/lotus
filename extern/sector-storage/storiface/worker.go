@@ -30,6 +30,24 @@ type WorkerResources struct {
 
 	CPUs uint64 // Logical cores
 	GPUs []string
+
+	IsMiner            bool
+	AddPieceMax        uint64
+	PreCommit1Max      uint64
+	DiskHoldMax        uint64
+	DiskUsed           uint64
+	APDiskHoldMax      uint64
+	APDiskUsed         uint64
+	PreCommit2Max      uint64
+	Commit2Max         uint64
+	AllowMyScheduler   bool
+	ForceP1FromLocalAP bool
+	ForceP2FromLocalP1 bool
+	ForceC2FromLocalP2 bool
+	IsPlanOffline      bool
+	AllowP2C2Parallel  bool
+	AutoPledgeDiff     uint64
+	IgnoreOutOfSpace   bool
 }
 
 type WorkerStats struct {
@@ -40,6 +58,8 @@ type WorkerStats struct {
 	MemUsedMax uint64
 	GpuUsed    bool   // nolint
 	CpuUse     uint64 // nolint
+	TaskTypes  string
+	Tasks      string
 }
 
 const (
@@ -78,7 +98,7 @@ var _ fmt.Stringer = &CallID{}
 var UndefCall CallID
 
 type WorkerCalls interface {
-	AddPiece(ctx context.Context, sector storage.SectorRef, pieceSizes []abi.UnpaddedPieceSize, newPieceSize abi.UnpaddedPieceSize, pieceData storage.Data) (CallID, error)
+	AddPiece(ctx context.Context, sector storage.SectorRef, pieceSizes []abi.UnpaddedPieceSize, newPieceSize abi.UnpaddedPieceSize, pieceData storage.Data, isFromDeal bool) (CallID, error)
 	SealPreCommit1(ctx context.Context, sector storage.SectorRef, ticket abi.SealRandomness, pieces []abi.PieceInfo) (CallID, error)
 	SealPreCommit2(ctx context.Context, sector storage.SectorRef, pc1o storage.PreCommit1Out) (CallID, error)
 	SealCommit1(ctx context.Context, sector storage.SectorRef, ticket abi.SealRandomness, seed abi.InteractiveSealRandomness, pieces []abi.PieceInfo, cids storage.SectorCids) (CallID, error)

@@ -29,7 +29,7 @@ func (s *taskSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt abi.
 	return supported, nil
 }
 
-func (s *taskSelector) Cmp(ctx context.Context, _ sealtasks.TaskType, a, b *workerHandle) (bool, error) {
+func (s *taskSelector) Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle, allowMyScheduler bool) (bool, error) {
 	atasks, err := a.workerRpc.TaskTypes(ctx)
 	if err != nil {
 		return false, xerrors.Errorf("getting supported worker task types: %w", err)
@@ -42,7 +42,11 @@ func (s *taskSelector) Cmp(ctx context.Context, _ sealtasks.TaskType, a, b *work
 		return len(atasks) < len(btasks), nil // prefer workers which can do less
 	}
 
-	return a.utilization() < b.utilization(), nil
+	if allowMyScheduler{
+		return a.utilizationMine(task, a, b), nil
+	}else {
+		return a.utilization() < b.utilization(), nil
+	}
 }
 
 var _ WorkerSelector = &taskSelector{}

@@ -3,6 +3,10 @@ package sealing
 import (
 	"context"
 
+	"os"
+
+	scClient "github.com/fileguard/sector-counter/client"
+
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-state-types/abi"
@@ -60,11 +64,23 @@ func (m *Sealing) PledgeSector() error {
 			return
 		}
 
-		sid, err := m.sc.Next()
-		if err != nil {
-			log.Errorf("%+v", err)
-			return
+		var sid abi.SectorNumber
+		if _, ok := os.LookupEnv("SC_TYPE"); ok {
+			sid0, err := scClient.NewClient().GetSectorID(context.Background(), "")
+			if err != nil {
+				log.Errorf("%+v", err)
+				return
+			}
+			sid = abi.SectorNumber(sid0)
+		} else {
+			sid0, err := m.sc.Next()
+			if err != nil {
+				log.Errorf("%+v", err)
+				return
+			}
+			sid = sid0
 		}
+
 		sectorID := m.minerSector(spt, sid)
 		err = m.sealer.NewSector(ctx, sectorID)
 		if err != nil {

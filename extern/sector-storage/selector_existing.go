@@ -66,8 +66,12 @@ func (s *existingSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt 
 	return false, nil
 }
 
-func (s *existingSelector) Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle) (bool, error) {
-	return a.utilization() < b.utilization(), nil
+func (s *existingSelector) Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle, allowMyScheduler bool) (bool, error) {
+	if allowMyScheduler{
+		return a.utilizationMine(task, a, b), nil
+	}else {
+		return a.utilization() < b.utilization(), nil
+	}
 }
 
 var _ WorkerSelector = &existingSelector{}

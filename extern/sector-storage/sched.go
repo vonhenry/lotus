@@ -2,6 +2,7 @@ package sectorstorage
 
 import (
 	"context"
+	"encoding/hex"
 	"math/rand"
 	"sort"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/filecoin-project/specs-storage/storage"
 
 	"github.com/filecoin-project/lotus/extern/sector-storage/sealtasks"
+	"github.com/filecoin-project/lotus/extern/sector-storage/stores"
 	"github.com/filecoin-project/lotus/extern/sector-storage/storiface"
 )
 
@@ -25,8 +27,27 @@ var SelectorTimeout = 5 * time.Second
 var InitWait = 3 * time.Second
 
 var (
-	SchedWindows = 2
+	SchedWindows = 0
 )
+
+func getPriorityByTask(taskType sealtasks.TaskType) int {
+	var priority = 0
+	if taskType == sealtasks.TTFinalize{
+		priority = 900
+	}else if taskType == sealtasks.TTCommit2{
+		priority = 800
+	}else if taskType == sealtasks.TTCommit1{
+		priority = 700
+	}else if taskType == sealtasks.TTPreCommit2{
+		priority = 600
+	}else if taskType == sealtasks.TTPreCommit1{
+		priority = 500
+	}else if taskType == sealtasks.TTAddPiece{
+		priority = 400
+	}
+
+	return priority
+}
 
 func getPriority(ctx context.Context) int {
 	sp := ctx.Value(SchedPriorityKey)
@@ -48,7 +69,7 @@ type WorkerAction func(ctx context.Context, w Worker) error
 type WorkerSelector interface {
 	Ok(ctx context.Context, task sealtasks.TaskType, spt abi.RegisteredSealProof, a *workerHandle) (bool, error) // true if worker is acceptable for performing a task
 
-	Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle) (bool, error) // true if a is preferred over b
+	Cmp(ctx context.Context, task sealtasks.TaskType, a, b *workerHandle, allowMyScheduler bool) (bool, error) // true if a is preferred over b
 }
 
 type scheduler struct {
@@ -71,6 +92,10 @@ type scheduler struct {
 	closing  chan struct{}
 	closed   chan struct{}
 	testSync chan struct{} // used for testing
+
+	allowMyScheduler  bool
+	preCommit1Max     uint64
+	preCommit1HoldMax uint64
 }
 
 type workerHandle struct {
@@ -117,10 +142,16 @@ type activeResources struct {
 	gpuUsed    bool
 	cpuUse     uint64
 
+	preCommit1Used uint64
+	preCommit2Used uint64
+	commit2Used    uint64
+	apUsed         uint64
+
 	cond *sync.Cond
 }
 
 type workerRequest struct {
+	ix stores.SectorIndex
 	sector   storage.SectorRef
 	taskType sealtasks.TaskType
 	priority int // larger values more important
@@ -142,7 +173,7 @@ type workerResponse struct {
 	err error
 }
 
-func newScheduler() *scheduler {
+func newScheduler(allowMyScheduler bool) *scheduler {
 	return &scheduler{
 		workers: map[WorkerID]*workerHandle{},
 
@@ -162,17 +193,23 @@ func newScheduler() *scheduler {
 
 		closing: make(chan struct{}),
 		closed:  make(chan struct{}),
+
+		allowMyScheduler: allowMyScheduler,
+		//preCommit1Max:    preCommit1Max,
+		//diskHoldMax:      diskHoldMax,
 	}
 }
 
-func (sh *scheduler) Schedule(ctx context.Context, sector storage.SectorRef, taskType sealtasks.TaskType, sel WorkerSelector, prepare WorkerAction, work WorkerAction) error {
+func (sh *scheduler) Schedule(ctx context.Context, index stores.SectorIndex ,sector storage.SectorRef, taskType sealtasks.TaskType, sel WorkerSelector, prepare WorkerAction, work WorkerAction) error {
 	ret := make(chan workerResponse)
 
 	select {
 	case sh.schedule <- &workerRequest{
+		ix:       index,
 		sector:   sector,
 		taskType: taskType,
-		priority: getPriority(ctx),
+		//priority: getPriority(ctx),
+		priority: getPriorityByTask(taskType),
 		sel:      sel,
 
 		prepare: prepare,
@@ -216,6 +253,68 @@ type SchedDiagRequestInfo struct {
 type SchedDiagInfo struct {
 	Requests    []SchedDiagRequestInfo
 	OpenWindows []string
+}
+
+func (sh *scheduler) runAutoPledge() {
+	for {
+		select {
+		case <-time.After(30 * time.Second):
+			//sh.workersLk.Lock()
+			//defer sh.workersLk.Unlock()
+			sh.workersLk.RLock()
+			defer sh.workersLk.RUnlock()
+			var apUsed = uint64(0)
+			var apMax = uint64(0)
+			var p1Used = uint64(0)
+			var p1Max = uint64(0)
+			for _, worker := range sh.workers {
+				if worker == nil || !worker.enabled || worker.workerRpc == nil {
+					continue
+				}
+				info, err := worker.workerRpc.Info(context.TODO())
+				if err != nil {
+					continue
+				}
+
+				tasks, err := worker.workerRpc.TaskTypes(context.TODO())
+				if err != nil {
+					continue //return false, xerrors.Errorf("getting supported worker task types: %w", err)
+				}
+				_, supported := tasks[sealtasks.TTAddPiece]
+				if supported {
+					apUsed = apUsed + worker.preparing.apUsed + worker.active.apUsed
+					apMax = apMax + info.Resources.AddPieceMax
+				}
+
+				_, supported = tasks[sealtasks.TTPreCommit1]
+				if supported {
+					p1Used = p1Used + worker.preparing.preCommit1Used + worker.active.preCommit1Used
+					p1Max = p1Max + info.Resources.PreCommit1Max
+				}
+			}
+			if p1Used >= p1Max {
+				return
+			}
+			if apUsed >= apMax {
+				return
+			}
+			if p1Max - p1Used > apMax - apUsed {
+				log.Infof(" lotus-miner sectors pledge automatic delivery")
+				//exe, err := os.Executable()
+				//if err != nil {
+				//	log.Errorf("getting executable for auto-restart: %+v", err)
+				//}
+				//_ = log.Sync()
+				//if err := syscall.Exec(exe, []string{exe,
+				//	" sectors ",
+				//	" pledge ",
+				//}, os.Environ()); err != nil {
+				//	log.Errorf("auto sectors pledge error: %+v", err)	//fmt.Println(err)
+				//}
+
+			}
+		}
+	}
 }
 
 func (sh *scheduler) runSched() {
@@ -299,7 +398,11 @@ func (sh *scheduler) runSched() {
 				req.done()
 			}
 
-			sh.trySched()
+			if sh.allowMyScheduler {
+				sh.trySchedMine()
+			} else {
+				sh.trySched()
+			}
 		}
 
 	}
@@ -326,6 +429,230 @@ func (sh *scheduler) diag() SchedDiagInfo {
 	}
 
 	return out
+}
+
+func (sh *scheduler) trySchedMine() {
+	sh.workersLk.RLock()
+	defer sh.workersLk.RUnlock()
+	log.Debugf("trySchedMine SCHED %d queued; %d workers", sh.schedQueue.Len(), len(sh.workers))
+	//if(sh.schedQueue.Len() > 1) {
+	//	sort.SliceStable(sh.schedQueue, func(i, j int) bool {
+	//		return (*sh.schedQueue)[i].priority < (*sh.schedQueue)[j].priority
+	//	})
+	//}
+
+	for sqi := 0; sqi < sh.schedQueue.Len(); sqi++ {
+		task := (*sh.schedQueue)[sqi]
+		tried := 0
+		var acceptable []WorkerID
+		//needRes := ResourceTable[task.taskType][sh.spt]
+		for wid, worker := range sh.workers {
+			if !worker.enabled {
+				log.Debugf("trySchedMine skipping disabled worker %s", worker.info.Hostname)
+				continue
+			}
+			//info, err := worker.workerRpc.Info(context.TODO())
+			//if err != nil {
+			//	log.Debugf("trySchedMine worker.workerRpc.Info get err for %s", worker.info.Hostname)
+			//	continue
+			//}
+			rpcCtx, cancel := context.WithTimeout(task.ctx, SelectorTimeout)
+			ok, err := task.sel.Ok(rpcCtx, task.taskType, task.sector.ProofType, worker)
+			cancel()
+			if err != nil {
+				log.Errorf("trySchedMine task.sel.Ok(worker: %s) error: %+v", worker.info.Hostname, err)
+				continue
+			}
+			if !ok {
+				continue
+			}
+			if !worker.preparing.canHandleRequestMine(task.ix, task.sector.ID, task.taskType, worker, wid,"schedAcceptable") {
+				continue
+			}
+			tried++
+			acceptable = append(acceptable, wid)
+		}
+
+		if len(acceptable) > 0 {
+			sort.SliceStable(acceptable, func(i, j int) bool {
+				rpcCtx, cancel := context.WithTimeout(task.ctx, SelectorTimeout)
+				defer cancel()
+				r, err := task.sel.Cmp(rpcCtx, task.taskType, sh.workers[acceptable[i]], sh.workers[acceptable[j]], sh.allowMyScheduler)
+
+				if err != nil {
+					log.Error("trySchedMine task.sel.Cmp selecting best worker: %s", err)
+				}
+				return r
+			})
+
+			sh.schedQueue.Remove(sqi)
+			sqi--
+			taskDone := make(chan struct{}, 1)
+			sh.assignWorker(taskDone, acceptable[0], sh.workers[acceptable[0]], task)
+			//sh.assignWorkerNoLocker(taskDone, acceptable[0], sh.workers[acceptable[0]], task)
+			widstring := hex.EncodeToString(acceptable[0][:]) //hex.EncodeToString(acceptable[0][5:])
+			//log.Infof("trySchedMine has successfully scheduled for sector s-t0%d-%d taskType %s to worker %d",task.sector.Miner,task.sector.Number,task.taskType,acceptable[0])
+			log.Infof("trySchedMine has successfully scheduled for sector s-t0%d-%d taskType %s to worker %s", task.sector.ID.Miner, task.sector.ID.Number, task.taskType, widstring)
+		}
+		if tried == 0 {
+			log.Debugf("trySchedMine didn't find any good workers for sector s-t0%d-%d taskType %s",task.sector.ID.Miner,task.sector.ID.Number,task.taskType)
+		}
+
+	}
+}
+
+func (sh *scheduler) assignWorkerNoLocker(taskDone chan struct{}, wid WorkerID, w *workerHandle, req *workerRequest) error {
+	//w, sh := sw.worker, sw.sched
+
+	needRes := ResourceTable[req.taskType][req.sector.ProofType]
+
+	w.lk.Lock()
+	w.preparing.add(sh.allowMyScheduler,req.taskType, w.info.Resources, needRes)
+	w.lk.Unlock()
+
+	go func() {
+		// first run the prepare step (e.g. fetching sector data from other worker)
+		err := req.prepare(req.ctx, sh.workTracker.worker(wid, w.workerRpc))
+		//sh.workersLk.Lock()
+
+		if err != nil {
+			w.lk.Lock()
+			w.preparing.free(sh.allowMyScheduler, req.taskType, w.info.Resources, needRes)
+			w.lk.Unlock()
+			//sh.workersLk.Unlock()
+
+			select {
+			case taskDone <- struct{}{}:
+			case <-sh.closing:
+				log.Warnf("scheduler closed while sending response (prepare error: %+v)", err)
+			}
+
+			select {
+			case req.ret <- workerResponse{err: err}:
+			case <-req.ctx.Done():
+				log.Warnf("request got cancelled before we could respond (prepare error: %+v)", err)
+			case <-sh.closing:
+				log.Warnf("scheduler closed while sending response (prepare error: %+v)", err)
+			}
+			return
+		}
+
+		// wait (if needed) for resources in the 'active' window
+		//err = w.active.withResources(sh.allowMyScheduler, req.taskType,
+		//	wid, w.info.Resources, needRes, &sh.workersLk, func() error {
+		err = w.active.withResourcesMeNoLocker(req.ix, sh.allowMyScheduler, req.sector.ID, req.taskType, w,
+					wid, w.info.Resources, needRes, func() error {
+				w.lk.Lock()
+				w.preparing.free(sh.allowMyScheduler, req.taskType, w.info.Resources, needRes)
+				w.lk.Unlock()
+				//sh.workersLk.Unlock()
+				//defer sh.workersLk.Lock() // we MUST return locked from this function
+
+				select {
+				case taskDone <- struct{}{}:
+				case <-sh.closing:
+				}
+
+				// Do the work!
+				err = req.work(req.ctx, sh.workTracker.worker(wid, w.workerRpc))
+
+				select {
+				case req.ret <- workerResponse{err: err}:
+				case <-req.ctx.Done():
+					log.Warnf("request got cancelled before we could respond")
+				case <-sh.closing:
+					log.Warnf("scheduler closed while sending response")
+				}
+
+				return nil
+			})
+
+		//sh.workersLk.Unlock()
+
+		// This error should always be nil, since nothing is setting it, but just to be safe:
+		if err != nil {
+			log.Errorf("error executing worker (withResources): %+v", err)
+		}
+	}()
+
+	return nil
+}
+
+func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *workerHandle, req *workerRequest) error {
+	//w, sh := sw.worker, sw.sched
+
+	needRes := ResourceTable[req.taskType][req.sector.ProofType]
+
+	w.lk.Lock()
+	w.preparing.add(sh.allowMyScheduler,req.taskType, w.info.Resources, needRes)
+	w.lk.Unlock()
+
+	go func() {
+		// first run the prepare step (e.g. fetching sector data from other worker)
+		err := req.prepare(req.ctx, sh.workTracker.worker(wid, w.workerRpc))
+		sh.workersLk.Lock()
+
+		if err != nil {
+			w.lk.Lock()
+			w.preparing.free(sh.allowMyScheduler, req.taskType, w.info.Resources, needRes)
+			w.lk.Unlock()
+			sh.workersLk.Unlock()
+
+			select {
+			case taskDone <- struct{}{}:
+			case <-sh.closing:
+				log.Warnf("scheduler closed while sending response (prepare error: %+v)", err)
+			}
+
+			select {
+			case req.ret <- workerResponse{err: err}:
+			case <-req.ctx.Done():
+				log.Warnf("request got cancelled before we could respond (prepare error: %+v)", err)
+			case <-sh.closing:
+				log.Warnf("scheduler closed while sending response (prepare error: %+v)", err)
+			}
+			return
+		}
+
+		// wait (if needed) for resources in the 'active' window
+		//err = w.active.withResources(sh.allowMyScheduler, req.taskType,
+		//	wid, w.info.Resources, needRes, &sh.workersLk, func() error {
+		err = w.active.withResourcesMe(req.ix, sh.allowMyScheduler, req.sector.ID, req.taskType, w,
+			wid, w.info.Resources, needRes, &sh.workersLk, func() error {
+				w.lk.Lock()
+				w.preparing.free(sh.allowMyScheduler, req.taskType, w.info.Resources, needRes)
+				w.lk.Unlock()
+				sh.workersLk.Unlock()
+				defer sh.workersLk.Lock() // we MUST return locked from this function
+
+				select {
+				case taskDone <- struct{}{}:
+				case <-sh.closing:
+				}
+
+				// Do the work!
+				err = req.work(req.ctx, sh.workTracker.worker(wid, w.workerRpc))
+
+				select {
+				case req.ret <- workerResponse{err: err}:
+				case <-req.ctx.Done():
+					log.Warnf("request got cancelled before we could respond")
+				case <-sh.closing:
+					log.Warnf("scheduler closed while sending response")
+				}
+
+				return nil
+			})
+
+		sh.workersLk.Unlock()
+
+		// This error should always be nil, since nothing is setting it, but just to be safe:
+		if err != nil {
+			log.Errorf("error executing worker (withResources): %+v", err)
+		}
+	}()
+
+	return nil
 }
 
 func (sh *scheduler) trySched() {
@@ -435,7 +762,7 @@ func (sh *scheduler) trySched() {
 				rpcCtx, cancel := context.WithTimeout(task.ctx, SelectorTimeout)
 				defer cancel()
 
-				r, err := task.sel.Cmp(rpcCtx, task.taskType, wi, wj)
+				r, err := task.sel.Cmp(rpcCtx, task.taskType, wi, wj, sh.allowMyScheduler)
 				if err != nil {
 					log.Errorf("selecting best worker: %s", err)
 				}
@@ -471,7 +798,7 @@ func (sh *scheduler) trySched() {
 
 			log.Debugf("SCHED ASSIGNED sqi:%d sector %d task %s to window %d", sqi, task.sector.ID.Number, task.taskType, wnd)
 
-			windows[wnd].allocated.add(wr, needRes)
+			windows[wnd].allocated.add(sh.allowMyScheduler, task.taskType, wr, needRes)
 			// TODO: We probably want to re-sort acceptableWindows here based on new
 			//  workerHandle.utilization + windows[wnd].allocated.utilization (workerHandle.utilization is used in all
 			//  task selectors, but not in the same way, so need to figure out how to do that in a non-O(n^2 way), and
