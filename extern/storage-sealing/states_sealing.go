@@ -3,9 +3,10 @@ package sealing
 import (
 	"bytes"
 	"context"
-
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
+	"time"
+	"fmt"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -462,6 +463,45 @@ func (m *Sealing) handleSubmitCommit(ctx statemachine.Context, sector SectorInfo
 	from, _, err := m.addrSel(ctx.Context(), mi, api.CommitAddr, goodFunds, collateral)
 	if err != nil {
 		return ctx.Send(SectorCommitFailed{xerrors.Errorf("no good address to send commit message from: %w", err)})
+	}
+
+	start := time.Now().Unix()
+	maxDuration := int64( 3600 * 17 ) // 17 hours
+	InitialBaseFee := uint64(0)
+	BaseFeeLimit := uint64(3_000_000_000)
+	for {
+		if time.Now().Unix() - start > maxDuration {
+			break
+		}
+
+		CurrentBaseFee, ok := m.api.ChainHeadBaseFee(ctx.Context())
+		if ok != nil {
+			fmt.Printf("basefee_tune_log: error, sector %d, waited %d minutes, get basefee failed.\nError: %s",
+				sector.SectorNumber, (time.Now().Unix() - start)/60, ok.Error())
+			time.Sleep(60)
+			continue
+		}
+
+		if InitialBaseFee == uint64(0) {
+			InitialBaseFee = CurrentBaseFee
+		}
+
+		if CurrentBaseFee > BaseFeeLimit {
+			fmt.Printf("basefee_tune_log: wait, sector %d, waited %d minutes.\n",
+				sector.SectorNumber, (time.Now().Unix() - start)/60)
+			time.Sleep( 5 * 60 ) // check base fee every 5 minutes
+			continue
+		}
+
+		save := uint64(0)
+		if InitialBaseFee > CurrentBaseFee {
+			save = (InitialBaseFee - CurrentBaseFee) * 100 / InitialBaseFee
+		}
+
+		fmt.Printf("basefee_tune_log: send, sector %d, waited %d minutes, init&final fees: %d %d, saved %d%% \n",
+			sector.SectorNumber, (time.Now().Unix() - start)/60, InitialBaseFee, CurrentBaseFee, save)
+
+		break
 	}
 
 	// TODO: check seed / ticket / deals are up to date

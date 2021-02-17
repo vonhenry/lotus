@@ -310,6 +310,15 @@ func (s SealingAPIAdapter) ChainHead(ctx context.Context) (sealing.TipSetToken, 
 	return head.Key().Bytes(), head.Height(), nil
 }
 
+func (s SealingAPIAdapter) ChainHeadBaseFee(ctx context.Context) ( uint64, error) {
+	head, err := s.delegate.ChainHead(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return head.Blocks()[0].ParentBaseFee.Uint64(), nil
+}
+
 func (s SealingAPIAdapter) ChainGetRandomnessFromBeacon(ctx context.Context, tok sealing.TipSetToken, personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) (abi.Randomness, error) {
 	tsk, err := types.TipSetKeyFromBytes(tok)
 	if err != nil {
